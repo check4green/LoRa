@@ -3,13 +3,27 @@
 #include <ESP8266HTTPClient.h>
 #include <ESP8266WiFi.h>
 #include <ArduinoJson.h>
+#include <time.h>
 
-const int csPin = 15;          // LoRa radio chip select d8
-const int resetPin = 4;       // LoRa radio reset d0
-const int irqPin = 5;         // change for your board; must be a hardware interrupt pin d1
+const int csPin = 15;          // LoRa radio chip select
+const int resetPin = 4;       // LoRa radio reset
+const int irqPin = 5;         // change for your board; must be a hardware interrupt pin
 
 byte localAddress = 0xFF;     // address of this device
-byte destination = 0xBB;      // destination to send to
+byte destinationAddress = 0xBB;      // destination to send to
+
+long lastSendTime = 0;        // last send time
+int interval = 2000;          // interval between sends
+
+const char* ssid = "Elve";
+const char* password = "nostradamus";
+
+int timezone = 3 * 3600;
+int dst = 0;
+
+String year, mon, mday, hour, minn, sec, tme;
+
+byte msgCount = 0;            // count of outgoing messages
 
 void setup() {
 //  LORA
@@ -22,22 +36,121 @@ void setup() {
   LoRa.setPins(csPin, resetPin, irqPin);// set CS, reset, IRQ pin
 
   if (!LoRa.begin(866E6)) {
-    Serial.println("LoRa init failed. Check your connections.");
+    Serial.println("Error: LoRa init failed. Check your connections.");
     while (true);
   }
   Serial.println("LoRa init succeeded.");
 
   
 //  WIFI
-  WiFi.begin("Elve", "nostradamus");   //WiFi connection
- 
-  while (WiFi.status() != WL_CONNECTED) {  //Wait for the WiFI connection completion
- 
-    delay(500);
-    Serial.println("Waiting for connection");
- 
+  Serial.println();
+  Serial.print("Wifi connecting to ");
+  Serial.println( ssid );
+
+  WiFi.begin(ssid,password);
+
+  Serial.println();
+  
+  Serial.print("Connecting");
+
+  while( WiFi.status() != WL_CONNECTED ){
+      delay(500);
+      Serial.print(".");        
   }
+
+  Serial.println();
+
+  Serial.println("Wifi Connected Success!");
+  Serial.print("NodeMCU IP Address : ");
+  Serial.println(WiFi.localIP() );
+
+  configTime(timezone, dst, "pool.ntp.org","time.nist.gov");
+  Serial.println("\nWaiting for Internet time.");
+
+  while(!time(nullptr)){
+     Serial.print("*");
+     delay(1000);
+  }
+  Serial.println("\nTime response....OK");   
+  Serial.println();
 }
+
+  // send packet
+  int sendMessage(String sID, byte iCA) {
+    String upInt, gA, cA, lA, iCAc;
+  //WIFI
+  if (WiFi.status() == WL_CONNECTED) { //Check WiFi connection status
+    
+    HTTPClient http;    //Declare object of class HTTPClient
+    http.begin("http://swiss-iot.azurewebsites.net/api/sensors/" + sID);  //Specify request destination
+    int httpCodeGET = http.GET();     //Send the request
+    if (httpCodeGET > 0) { //Check the returning code
+      
+      StaticJsonBuffer<300> jsonBuffer;
+      JsonObject& root = jsonBuffer.parseObject(http.getString());
+      if (!root.success()) {
+        Serial.println("Error: Parse object failed.");
+        return 000;
+      }
+      
+      const char* uploadInterval = root["uploadInterval"];
+      const char* gatewayAddress = root["gatewayAddress"];
+      const char* clientAddress = root["clientAddress"];
+      upInt = String(uploadInterval);
+      gA = String(gatewayAddress);
+      cA = String(clientAddress);
+      Serial.println();
+      Serial.println("SERVER GET RESPONSE");
+      Serial.println("Response: " + String(httpCodeGET));   //Print HTTP return code
+      Serial.println("uploadInterval: " + upInt);   
+      Serial.println("gatewayAddress: " + gA);   
+      Serial.println("clientAddress: " + cA);
+      Serial.println();
+    }
+ 
+    http.end();   //Close connection
+ 
+  } else {
+    Serial.println("Error: WiFi connection.");
+  }
+  
+    //LORA
+    lA = String(localAddress, HEX);
+    lA = "0x"+lA;
+    if(lA != gA){
+      Serial.println("Error: gatewayAddress: " + gA + " is false."); 
+      return 100;  
+    }
+    iCAc = String(iCA, HEX);
+    iCAc = "0x"+iCAc;
+    if(iCAc != cA){
+      Serial.println("Error: clientAddress: " + cA + " is false."); 
+      return 200;  
+    }
+    
+    String outgoing = upInt;              // outgoing message
+    
+    destinationAddress = iCA;
+    
+    LoRa.beginPacket();                  // start packet
+    LoRa.write(destinationAddress);              // add destination address
+    LoRa.write(localAddress);             // add sender address
+    LoRa.write(msgCount);                 // add message ID
+    LoRa.write(outgoing.length());        // add payload length
+    LoRa.print(outgoing);  // add payload
+    LoRa.endPacket();                     // finish packet and send it
+    msgCount++;                           // increment message ID
+    // SERIAL MONITOR
+    Serial.println();
+    Serial.println("LoRa GATEWAY SENDING");
+    Serial.println("destinationAddress: 0x" + String(destinationAddress, HEX));
+    Serial.println("localAddress: 0x" + String(localAddress, HEX));
+    Serial.println("msgCount: " + String(msgCount));
+    Serial.println("outgoing.length: " + String(outgoing.length()));
+    Serial.println("outgoing: " + outgoing);
+    Serial.println();
+    return 300;
+  }
 
 void onReceive(int packetSize) {
 //  LORA
@@ -56,61 +169,125 @@ void onReceive(int packetSize) {
   }
 
   if (incomingLength != incoming.length()) {   // check length for error
-    Serial.println("error: message length does not match length");
+    Serial.println("Error: Message length does not match length.");
     return;                             // skip rest of function
   }
 
   // if the recipient isn't this device or broadcast,
   if (recipient != localAddress && recipient != 0xBB) {
-    Serial.println("This message is not for me.");
+    Serial.println("Error: This message is not for me.");
     return;                             // skip rest of function
   }
+  
+  //Split incomming message
+  String sensorValue, sensorID;
+  int indexSensorValue=0;
+  for(int i=0; String(char(incoming[i])) != "|"; i++){
+    indexSensorValue = i+1;
+  }
+  sensorValue = incoming.substring(0,indexSensorValue);
+  indexSensorValue += 1;
+  sensorID = incoming.substring(indexSensorValue);
+
 
   // if message is for this device, or broadcast, print details:
+  //Serial.println("destinationAddress: 0x" + String(destinationAddress, HEX));
+  Serial.println();
+  Serial.println("LoRa GATEWAY RECEIVED");
+  Serial.println("localAddress: 0x" + String(localAddress, HEX));
   Serial.println("Received from: 0x" + String(sender, HEX));
   Serial.println("Sent to: 0x" + String(recipient, HEX));
-  Serial.println("Message ID: " + String(incomingMsgId));
-  Serial.println("Message length: " + String(incomingLength));
-  Serial.println("Message: " + incoming);
+  Serial.println("incomingMsgId: " + String(incomingMsgId));
+  Serial.println("incoming.length: " + String(incomingLength));
+  Serial.println("incoming: " + incoming);
+  Serial.println("sensorValue: " + sensorValue);
+  Serial.println("sensorID: " + sensorID);
   Serial.println("RSSI: " + String(LoRa.packetRssi()));
   Serial.println("Snr: " + String(LoRa.packetSnr()));
   Serial.println();
+
+  int gatewayAddressVerify;
   
-//WIFI
+  if (millis() - lastSendTime > interval) {
+    gatewayAddressVerify = sendMessage(sensorID, sender);
+    lastSendTime = millis();            // timestamp the message
+    interval = random(2000) + 1000;    // 2-3 seconds
+  }
+  //WIFI
+  if(gatewayAddressVerify == 300){   
   if (WiFi.status() == WL_CONNECTED) { //Check WiFi connection status
+
+    time_t now = time(nullptr);
+    struct tm* p_tm = localtime(&now);
+
+    year = String(p_tm->tm_year + 1900);
+    
+    if(p_tm->tm_mday < 10){
+      mday = String(p_tm->tm_mday);
+      mday = "0" + mday;
+    }else{
+      mday = String(p_tm->tm_mday);
+     }
+    if(p_tm->tm_mon < 10){
+      mon = String(p_tm->tm_mon + 1);
+      mon = "0" + mon;
+    }else{
+      mon = String(p_tm->tm_mon + 1);
+     }
+    if(p_tm->tm_hour < 10){
+      hour = String(p_tm->tm_hour);
+      hour = "0" + hour;
+    }else{
+      hour = String(p_tm->tm_hour);
+     }
+    if(p_tm->tm_min < 10){
+      minn = String(p_tm->tm_min);
+      minn = "0" + minn;
+    }else{
+      minn = String(p_tm->tm_min);
+     }
+    if(p_tm->tm_sec < 10){
+      sec = String(p_tm->tm_sec);
+      sec = "0" + sec;
+    }else{
+      sec = String(p_tm->tm_sec);
+     }
+    
+    tme = year + "-" + mon + "-" + mday + "T" + hour + ":" + minn + ":" + sec + "+02:00";
  
     StaticJsonBuffer<300> JSONbuffer;   //Declaring static JSON buffer
     JsonObject& JSONencoder = JSONbuffer.createObject(); 
  
-    JSONencoder["sensorId"] = "42";
-    JSONencoder["value"] = incoming;
-    JSONencoder["readingDate"] = "03.04.2018 13:04:00 +02:00";
+    JSONencoder["sensorId"] = sensorID;
+    JSONencoder["value"] = sensorValue;
+    JSONencoder["readingDate"] = tme;
  
     char JSONmessageBuffer[300];
     JSONencoder.prettyPrintTo(JSONmessageBuffer, sizeof(JSONmessageBuffer));
-    Serial.println(JSONmessageBuffer);
  
     HTTPClient http;    //Declare object of class HTTPClient
  
     http.begin("http://swiss-iot.azurewebsites.net/api/readings");      //Specify request destination
     http.addHeader("Content-Type", "application/json");  //Specify content-type header
  
-    int httpCode = http.POST(JSONmessageBuffer);   //Send the request
-    String payload = http.getString();                                        //Get the response payload
- 
-    Serial.println(httpCode);   //Print HTTP return code
-    Serial.println(payload);    //Print request response payload
- 
+    int httpCodePOST = http.POST(JSONmessageBuffer);   //Send the request
+    if (httpCodePOST > 0) { //Check the returning code
+      String payload = http.getString();      
+      //Get the response payload
+      Serial.println();
+      Serial.println("SERVER POST RESPONSE");
+      Serial.println("Time: " + tme);
+      Serial.println("JSONmessageBuffer: " + String(JSONmessageBuffer));
+      Serial.println("response: " + String(httpCodePOST));   //Print HTTP return code
+      Serial.println("payload: " + payload);    //Print request response payload
+      Serial.println();
+    }
     http.end();  //Close connection
- 
+    
   } else {
- 
-    Serial.println("Error in WiFi connection");
- 
+    Serial.println("Error: WiFi connection.");
   }
- 
-  delay(5000);  //Send a request every 30 seconds
- 
+  }
 }
 
 void loop() {
