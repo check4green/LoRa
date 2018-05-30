@@ -12,11 +12,11 @@ const int resetPin = 9;       // LoRa radio reset
 const int irqPin = 8;         // change for your board; must be a hardware interrupt pin
 
 String sensorValue;              // outgoing message
-String sensorID = "65";
+String clientAddressForServer;
     
 byte msgCount = 0;            // count of outgoing messages
-byte localAddress = 0xB1;     // address of this device
-byte destinationAddress = 0xFF;      // destination to send to
+byte localAddress = 0xb1;     // address of this device
+byte destinationAddress = 0xff;      // destination to send to
 
 long lastSendTime = 0;        // last send time
 int interval = 2000;          // interval between sends
@@ -93,10 +93,10 @@ void onReceive(int packetSize) {
 }
 
   // send packet
-  void sendMessage(String sensorValue, String sensorID) {
+  void sendMessage(String sensorValue, String clientAddressForServer) {
 
     String delimiter = "|";
-    String outgoing = sensorValue + delimiter + sensorID;              // outgoing message
+    String outgoing = sensorValue + delimiter + clientAddressForServer;              // outgoing message
 
     LoRa.beginPacket();                  // start packet
     LoRa.write(destinationAddress);              // add destination address
@@ -114,13 +114,14 @@ void onReceive(int packetSize) {
     Serial.println("msgCount: " + String(msgCount));
     Serial.println("outgoing.length: " + String(outgoing.length()));
     Serial.println("sensorValue: " + sensorValue);
-    Serial.println("sensorID: " + sensorID);
+    Serial.println("clientAddressForServer: " + clientAddressForServer);
     Serial.println("outgoing : " + outgoing);
     Serial.println();
   }
   
 void loop() {
-  
+  clientAddressForServer = String(localAddress, HEX);
+  clientAddressForServer = "0x" + clientAddressForServer;
   if (millis() - lastSendTime > interval) {
     digitalWrite(trigPin, LOW);
     delayMicroseconds(2);
@@ -133,7 +134,7 @@ void loop() {
     // Calculating the distance
     distance = duration*0.034/2;
     String sensorValue = String(distance);   // send a message
-    sendMessage(sensorValue, sensorID);
+    sendMessage(sensorValue, clientAddressForServer);
     lastSendTime = millis();            // timestamp the message
     interval = random(2000) + 1000;    // 2-3 seconds
   }

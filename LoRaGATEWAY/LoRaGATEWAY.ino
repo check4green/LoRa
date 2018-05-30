@@ -9,8 +9,9 @@ const int csPin = 15;          // LoRa radio chip select
 const int resetPin = 4;       // LoRa radio reset
 const int irqPin = 5;         // change for your board; must be a hardware interrupt pin
 
-byte localAddress = 0xFF;     // address of this device
-byte destinationAddress = 0xBB;      // destination to send to
+String gatewayAddressForServer;
+byte localAddress = 0xff;     // address of this device
+byte destinationAddress = 0xbb;      // destination to send to
 
 long lastSendTime = 0;        // last send time
 int interval = 2000;          // interval between sends
@@ -76,13 +77,18 @@ void setup() {
 }
 
   // send packet
-  int sendMessage(String sID, byte iCA) {
+  int sendMessage(String sA, byte iCA) {
     String upInt, gA, cA, lA, iCAc;
+    
+    lA = String(localAddress, HEX);
+    lA = "0x"+lA;
+    iCAc = String(iCA, HEX);
+    iCAc = "0x"+iCAc;
+    
   //WIFI
   if (WiFi.status() == WL_CONNECTED) { //Check WiFi connection status
-    
     HTTPClient http;    //Declare object of class HTTPClient
-    http.begin("http://swiss-iot.azurewebsites.net/api/sensors/" + sID);  //Specify request destination
+    http.begin("http://swiss-iot.azurewebsites.net/api/sensors/address/" + lA + "/" + iCAc);  //Specify request destination
     int httpCodeGET = http.GET();     //Send the request
     if (httpCodeGET > 0) { //Check the returning code
       
@@ -115,14 +121,10 @@ void setup() {
   }
   
     //LORA
-    lA = String(localAddress, HEX);
-    lA = "0x"+lA;
     if(lA != gA){
       Serial.println("Error: gatewayAddress: " + gA + " is false."); 
       return 100;  
     }
-    iCAc = String(iCA, HEX);
-    iCAc = "0x"+iCAc;
     if(iCAc != cA){
       Serial.println("Error: clientAddress: " + cA + " is false."); 
       return 200;  
@@ -180,14 +182,14 @@ void onReceive(int packetSize) {
   }
   
   //Split incomming message
-  String sensorValue, sensorID;
+  String sensorValue, sensorAddress;
   int indexSensorValue=0;
   for(int i=0; String(char(incoming[i])) != "|"; i++){
     indexSensorValue = i+1;
   }
   sensorValue = incoming.substring(0,indexSensorValue);
   indexSensorValue += 1;
-  sensorID = incoming.substring(indexSensorValue);
+  sensorAddress = incoming.substring(indexSensorValue);
 
 
   // if message is for this device, or broadcast, print details:
@@ -201,7 +203,7 @@ void onReceive(int packetSize) {
   Serial.println("incoming.length: " + String(incomingLength));
   Serial.println("incoming: " + incoming);
   Serial.println("sensorValue: " + sensorValue);
-  Serial.println("sensorID: " + sensorID);
+  Serial.println("sensorAddress: " + sensorAddress);
   Serial.println("RSSI: " + String(LoRa.packetRssi()));
   Serial.println("Snr: " + String(LoRa.packetSnr()));
   Serial.println();
@@ -209,7 +211,7 @@ void onReceive(int packetSize) {
   int gatewayAddressVerify;
   
   if (millis() - lastSendTime > interval) {
-    gatewayAddressVerify = sendMessage(sensorID, sender);
+    gatewayAddressVerify = sendMessage(sensorAddress, sender);
     lastSendTime = millis();            // timestamp the message
     interval = random(2000) + 1000;    // 2-3 seconds
   }
@@ -257,8 +259,12 @@ void onReceive(int packetSize) {
  
     StaticJsonBuffer<300> JSONbuffer;   //Declaring static JSON buffer
     JsonObject& JSONencoder = JSONbuffer.createObject(); 
- 
-    JSONencoder["sensorId"] = sensorID;
+
+    gatewayAddressForServer = String(localAddress, HEX);
+    gatewayAddressForServer = "0x" + gatewayAddressForServer;
+
+    JSONencoder["sensorGatewayAddress"] = gatewayAddressForServer;
+    JSONencoder["sensorClientAddress"] = sensorAddress;
     JSONencoder["value"] = sensorValue;
     JSONencoder["readingDate"] = tme;
  
@@ -267,7 +273,7 @@ void onReceive(int packetSize) {
  
     HTTPClient http;    //Declare object of class HTTPClient
  
-    http.begin("http://swiss-iot.azurewebsites.net/api/readings");      //Specify request destination
+    http.begin("http://swiss-iot.azurewebsites.net/api/readings/address");      //Specify request destination
     http.addHeader("Content-Type", "application/json");  //Specify content-type header
  
     int httpCodePOST = http.POST(JSONmessageBuffer);   //Send the request
