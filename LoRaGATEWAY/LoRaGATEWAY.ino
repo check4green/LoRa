@@ -11,7 +11,7 @@ const int irqPin = 5;         // change for your board; must be a hardware inter
 
 String gatewayAddressForServer;
 byte localAddress = 0xff;     // address of this device
-byte destinationAddress = 0xbb;      // destination to send to
+byte destinationAddress = 0x00;      // destination to send to
 
 long lastSendTime = 0;        // last send time
 int interval = 2000;          // interval between sends
@@ -88,7 +88,8 @@ void setup() {
   //WIFI
   if (WiFi.status() == WL_CONNECTED) { //Check WiFi connection status
     HTTPClient http;    //Declare object of class HTTPClient
-    http.begin("http://swiss-iot.azurewebsites.net/api/sensors/address/" + lA + "/" + iCAc);  //Specify request destination
+//    http.begin("http://swiss-iot.azurewebsites.net/api/sensors/address/" + lA + "/" + iCAc);  //Specify request destination
+    http.begin("http://192.168.0.18:32333/api/sensors/address/" + lA + "/" + iCAc);  //Specify request destination
     int httpCodeGET = http.GET();     //Send the request
     if (httpCodeGET > 0) { //Check the returning code
       
@@ -176,7 +177,7 @@ void onReceive(int packetSize) {
   }
 
   // if the recipient isn't this device or broadcast,
-  if (recipient != localAddress && recipient != 0xBB) {
+  if (recipient != localAddress && recipient != 0x00) {
     Serial.println("Error: This message is not for me.");
     return;                             // skip rest of function
   }
@@ -273,7 +274,9 @@ void onReceive(int packetSize) {
  
     HTTPClient http;    //Declare object of class HTTPClient
  
-    http.begin("http://swiss-iot.azurewebsites.net/api/readings/address");      //Specify request destination
+//    http.begin("http://swiss-iot.azurewebsites.net/api/readings/address");      //Specify request destination
+    http.begin("http://192.168.0.18:32333/api/readings/address");      //Specify request destination
+   
     http.addHeader("Content-Type", "application/json");  //Specify content-type header
  
     int httpCodePOST = http.POST(JSONmessageBuffer);   //Send the request

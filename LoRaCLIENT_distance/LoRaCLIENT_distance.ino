@@ -1,5 +1,6 @@
 #include <SPI.h>
 #include <LoRa.h>
+#include <JeeLib.h> // Low power functions library
 
 const int trigPin = 3;
 const int echoPin = 2;
@@ -15,11 +16,15 @@ String sensorValue;              // outgoing message
 String clientAddressForServer;
     
 byte msgCount = 0;            // count of outgoing messages
-byte localAddress = 0xb1;     // address of this device
+byte localAddress = 0x10;     // address of this device
 byte destinationAddress = 0xff;      // destination to send to
 
 long lastSendTime = 0;        // last send time
 int interval = 2000;          // interval between sends
+
+ISR(WDT_vect) { Sleepy::watchdogEvent(); } // Setup the watchdog
+
+const int transistor = 4;
 
 void setup() {
   Serial.begin(9600);
@@ -38,6 +43,9 @@ void setup() {
     Serial.println("Error: LoRa init failed. Check your connections.");
     while (true);
   }
+
+  pinMode(transistor, OUTPUT);
+  
   Serial.println("LoRa init succeeded.");
 }
 
@@ -63,7 +71,7 @@ void onReceive(int packetSize) {
   }
 
   // if the recipient isn't this device or broadcast,
-  if (recipient != localAddress && recipient != 0xFF) {
+  if (recipient != localAddress && recipient != 0xff) {
     Serial.println("Error: This message is not for me.");
     return;                             // skip rest of function
   }
@@ -86,10 +94,17 @@ void onReceive(int packetSize) {
   Serial.println("RSSI: " + String(LoRa.packetRssi()));
   Serial.println("Snr: " + String(LoRa.packetSnr()));
   Serial.println();
- 
+  
+  digitalWrite(transistor, LOW);
+  delay(1000);
+  String sleeping = String(60000*uploadInterval);
+  Serial.println("Sleeping for: " + sleeping);
   for(int i=0; i<uploadInterval; i++){
-    delay(60000);
+    LoRa.sleep();
+    Sleepy::loseSomeTime(60000);
   };
+  digitalWrite(transistor, HIGH);
+  delay(1000);
 }
 
   // send packet
@@ -120,6 +135,7 @@ void onReceive(int packetSize) {
   }
   
 void loop() {
+  digitalWrite(transistor, HIGH);
   clientAddressForServer = String(localAddress, HEX);
   clientAddressForServer = "0x" + clientAddressForServer;
   if (millis() - lastSendTime > interval) {
