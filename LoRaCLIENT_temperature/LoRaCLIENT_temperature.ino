@@ -1,12 +1,11 @@
 #include <SPI.h>
 #include <LoRa.h>
 #include <JeeLib.h> // Low power functions library
+#include <dht11.h>
 
-const int trigPin = 3;
-const int echoPin = 2;
+dht11 DHT11;
+#define DHT11PIN 7
 
-long duration;
-int distance;
 
 const int csPin = 10;          // LoRa radio chip select
 const int resetPin = 9;       // LoRa radio reset
@@ -16,7 +15,7 @@ String sensorValue;              // outgoing message
 String clientAddressForServer;
     
 byte msgCount = 0;            // count of outgoing messages
-byte localAddress = 0x80;     // address of this device
+byte localAddress = 0x13;     // address of this device
 byte destinationAddress = 0xff;      // destination to send to
 
 long lastSendTime = 0;        // last send time
@@ -29,10 +28,6 @@ const int transistor = 4;
 void setup() {
   Serial.begin(9600);
   while (!Serial);
-
-  //HC-SR04
-  pinMode(trigPin, OUTPUT); // Sets the trigPin as an Output
-  pinMode(echoPin, INPUT); // Sets the echoPin as an Input
 
   Serial.println("LoRa CLIENT");
 
@@ -139,17 +134,9 @@ void loop() {
   clientAddressForServer = String(localAddress, HEX);
   clientAddressForServer = "0x" + clientAddressForServer;
   if (millis() - lastSendTime > interval) {
-    digitalWrite(trigPin, LOW);
-    delayMicroseconds(2);
-    // Sets the trigPin on HIGH state for 10 micro seconds
-    digitalWrite(trigPin, HIGH);
-    delayMicroseconds(10);
-    digitalWrite(trigPin, LOW);
-    // Reads the echoPin, returns the sound wave travel time in microseconds
-    duration = pulseIn(echoPin, HIGH);
-    // Calculating the distance
-    distance = duration*0.034/2;
-    String sensorValue = String(distance);   // send a message
+    int chk = DHT11.read(DHT11PIN);
+    int temperature = DHT11.temperature;
+    String sensorValue = String(temperature);   // send a message
     sendMessage(sensorValue, clientAddressForServer);
     lastSendTime = millis();            // timestamp the message
     interval = random(2000) + 1000;    // 2-3 seconds

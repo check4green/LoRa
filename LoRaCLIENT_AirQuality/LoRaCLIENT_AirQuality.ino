@@ -1,13 +1,18 @@
 #include <SPI.h>
 #include <LoRa.h>
 #include <JeeLib.h> // Low power functions library
+#include "SparkFunCCS811.h"
 
-const int trigPin = 3;
-const int echoPin = 2;
+#define CCS811_ADDR 0x5B //Default I2C Address
 
-long duration;
-int distance;
+CCS811 mySensor(CCS811_ADDR);
 
+float CO2;
+int ECO2;
+float VOC;
+int TVOC;
+int AQ;
+    
 const int csPin = 10;          // LoRa radio chip select
 const int resetPin = 9;       // LoRa radio reset
 const int irqPin = 8;         // change for your board; must be a hardware interrupt pin
@@ -16,7 +21,7 @@ String sensorValue;              // outgoing message
 String clientAddressForServer;
     
 byte msgCount = 0;            // count of outgoing messages
-byte localAddress = 0x80;     // address of this device
+byte localAddress = 0x14;     // address of this device
 byte destinationAddress = 0xff;      // destination to send to
 
 long lastSendTime = 0;        // last send time
@@ -30,9 +35,8 @@ void setup() {
   Serial.begin(9600);
   while (!Serial);
 
-  //HC-SR04
-  pinMode(trigPin, OUTPUT); // Sets the trigPin as an Output
-  pinMode(echoPin, INPUT); // Sets the echoPin as an Input
+  //CCS811
+  mySensor.begin();
 
   Serial.println("LoRa CLIENT");
 
@@ -47,6 +51,8 @@ void setup() {
   pinMode(transistor, OUTPUT);
   
   Serial.println("LoRa init succeeded.");
+  
+
 }
 
 void onReceive(int packetSize) {
@@ -139,17 +145,18 @@ void loop() {
   clientAddressForServer = String(localAddress, HEX);
   clientAddressForServer = "0x" + clientAddressForServer;
   if (millis() - lastSendTime > interval) {
-    digitalWrite(trigPin, LOW);
-    delayMicroseconds(2);
-    // Sets the trigPin on HIGH state for 10 micro seconds
-    digitalWrite(trigPin, HIGH);
-    delayMicroseconds(10);
-    digitalWrite(trigPin, LOW);
-    // Reads the echoPin, returns the sound wave travel time in microseconds
-    duration = pulseIn(echoPin, HIGH);
-    // Calculating the distance
-    distance = duration*0.034/2;
-    String sensorValue = String(distance);   // send a message
+    mySensor.readAlgorithmResults();
+    CO2 = mySensor.getCO2();
+    if(CO2 == 400){
+      CO2 = 0;
+     }
+    CO2 = (CO2/8192)*100;
+    ECO2 = (int)CO2;
+    VOC = mySensor.getTVOC();
+    VOC = (VOC/1187)*100;
+    TVOC = (int)VOC;
+    AQ = (ECO2+TVOC)/2;
+    String sensorValue = String(AQ);   // send a message
     sendMessage(sensorValue, clientAddressForServer);
     lastSendTime = millis();            // timestamp the message
     interval = random(2000) + 1000;    // 2-3 seconds

@@ -4,6 +4,7 @@
 #include <ESP8266WiFi.h>
 #include <ArduinoJson.h>
 #include <time.h>
+#include <EEPROM.h>
 
 const int csPin = 15;          // LoRa radio chip select
 const int resetPin = 4;       // LoRa radio reset
@@ -16,9 +17,6 @@ byte destinationAddress = 0x00;      // destination to send to
 long lastSendTime = 0;        // last send time
 int interval = 2000;          // interval between sends
 
-const char* ssid = "Elve";
-const char* password = "nostradamus";
-
 int timezone = 3 * 3600;
 int dst = 0;
 
@@ -26,7 +24,22 @@ String year, mon, mday, hour, minn, sec, tme;
 
 byte msgCount = 0;            // count of outgoing messages
 
+String ssidpass, ssid, pass;
+int address = 0;
+char arrayToStore[255];                    // Must be greater than the length of string.
+
+int LED_bluetooth = 2;
+int LED_wifi = 0;
+int LED_lora = 16;
+
 void setup() {
+  pinMode(LED_bluetooth, OUTPUT);
+  pinMode(LED_wifi, OUTPUT);
+  pinMode(LED_lora, OUTPUT);
+  digitalWrite(LED_bluetooth, LOW);
+  digitalWrite(LED_wifi, LOW);
+  digitalWrite(LED_lora, LOW);
+  
 //  LORA
   Serial.begin(9600);
   while (!Serial);
@@ -38,29 +51,71 @@ void setup() {
 
   if (!LoRa.begin(866E6)) {
     Serial.println("Error: LoRa init failed. Check your connections.");
+    digitalWrite(LED_lora, LOW);
     while (true);
   }
   Serial.println("LoRa init succeeded.");
+  digitalWrite(LED_lora, HIGH);
+  delay(3000);
+  digitalWrite(LED_lora, LOW);
+  EEPROM.begin(512);
 
-  
+//  BLUETOOTH
+  bluetooth:
+  ssidpass="0";
+  ssid = "0";
+  pass = "0";
+
+  ssidpass = EEPROM.get(address, arrayToStore);
+  Serial.println();
+  Serial.println(ssidpass);
+  int indexssidpass=0;
+  for(int i=0; String(char(ssidpass[i])) != "|"; i++){
+    indexssidpass = i+1;
+  }
+  ssid = ssidpass.substring(0,indexssidpass);
+  indexssidpass += 1;
+  pass = ssidpass.substring(indexssidpass);
+  Serial.println(ssid);
+  Serial.println(pass);
+
 //  WIFI
   Serial.println();
   Serial.print("Wifi connecting to ");
   Serial.println( ssid );
-
-  WiFi.begin(ssid,password);
-
+  WiFi.begin((const char*)ssid.c_str(), (const char*)pass.c_str());
   Serial.println();
-  
-  Serial.print("Connecting");
-
-  while( WiFi.status() != WL_CONNECTED ){
-      delay(500);
-      Serial.print(".");        
+  Serial.print("Waiting 10sec for WiFi connecting...");
+   delay(10000);
+  if(WiFi.status() != WL_CONNECTED){
+      digitalWrite(LED_wifi, LOW);
+      Serial.println();
+      Serial.print("Waiting for WiFi SSID and Password");
   }
-
+  while(WiFi.status() != WL_CONNECTED){
+    digitalWrite(LED_bluetooth, HIGH);
+    digitalWrite(LED_wifi, LOW);
+    delay(500);
+    Serial.print(".");  
+    if (Serial.available())  /* If data is available on serial port */
+      {
+        ssidpass = Serial.readString();  /* Data received from bluetooth */
+        
+        ssidpass.toCharArray(arrayToStore, ssidpass.length()+1);  // Convert string to array.
+        EEPROM.put(address, arrayToStore);                 // To store data
+        if(ssidpass.length() >=1){
+          goto bluetooth;
+        }
+      }
+  }
+  
+   if(WiFi.status() != WL_CONNECTED){
+      goto bluetooth;
+      digitalWrite(LED_wifi, LOW);
+   }    
+  digitalWrite(LED_bluetooth, LOW);
+  digitalWrite(LED_wifi, HIGH);
   Serial.println();
-
   Serial.println("Wifi Connected Success!");
   Serial.print("NodeMCU IP Address : ");
   Serial.println(WiFi.localIP() );
@@ -74,6 +129,9 @@ void setup() {
   }
   Serial.println("\nTime response....OK");   
   Serial.println();
+
+  EEPROM.end();
+
 }
 
   // send packet
@@ -87,13 +145,15 @@ void setup() {
     
   //WIFI
   if (WiFi.status() == WL_CONNECTED) { //Check WiFi connection status
+    digitalWrite(LED_wifi, HIGH);
     HTTPClient http;    //Declare object of class HTTPClient
-//    http.begin("http://swiss-iot.azurewebsites.net/api/sensors/address/" + lA + "/" + iCAc);  //Specify request destination
-    http.begin("http://192.168.0.18:32333/api/sensors/address/" + lA + "/" + iCAc);  //Specify request destination
+    http.begin("http://swiss-iot.azurewebsites.net/api/sensors/address/" + lA + "/" + iCAc);  //Specify request destination
+//    http.begin("http://192.168.0.18:32333/api/sensors/address/" + lA + "/" + iCAc);  //Specify request destination
+    http.addHeader("Authorization", "Basic Y3JnQHlhaG9vLmNvbTpwYWNhbGE=", true, true);
     int httpCodeGET = http.GET();     //Send the request
     if (httpCodeGET > 0) { //Check the returning code
       
-      StaticJsonBuffer<300> jsonBuffer;
+      StaticJsonBuffer<400> jsonBuffer;
       JsonObject& root = jsonBuffer.parseObject(http.getString());
       if (!root.success()) {
         Serial.println("Error: Parse object failed.");
@@ -119,6 +179,7 @@ void setup() {
  
   } else {
     Serial.println("Error: WiFi connection.");
+    digitalWrite(LED_wifi, LOW);
   }
   
     //LORA
@@ -136,6 +197,9 @@ void setup() {
     destinationAddress = iCA;
     
     LoRa.beginPacket();                  // start packet
+    if(LoRa.beginPacket()){
+       digitalWrite(LED_lora, HIGH);  
+    }
     LoRa.write(destinationAddress);              // add destination address
     LoRa.write(localAddress);             // add sender address
     LoRa.write(msgCount);                 // add message ID
@@ -152,12 +216,17 @@ void setup() {
     Serial.println("outgoing.length: " + String(outgoing.length()));
     Serial.println("outgoing: " + outgoing);
     Serial.println();
+    digitalWrite(LED_lora, LOW);
     return 300;
   }
 
 void onReceive(int packetSize) {
 //  LORA
-  if (packetSize == 0) return;          // if there's no packet, return
+  if (packetSize == 0) {
+    return;
+  }else{
+      digitalWrite(LED_lora, HIGH);
+    }          // if there's no packet, return
 
   // read packet header bytes:
   int recipient = LoRa.read();          // recipient address
@@ -173,6 +242,7 @@ void onReceive(int packetSize) {
 
   if (incomingLength != incoming.length()) {   // check length for error
     Serial.println("Error: Message length does not match length.");
+    digitalWrite(LED_lora, LOW); 
     return;                             // skip rest of function
   }
 
@@ -216,10 +286,13 @@ void onReceive(int packetSize) {
     lastSendTime = millis();            // timestamp the message
     interval = random(2000) + 1000;    // 2-3 seconds
   }
+    digitalWrite(LED_lora, LOW);
+    
   //WIFI
   if(gatewayAddressVerify == 300){   
   if (WiFi.status() == WL_CONNECTED) { //Check WiFi connection status
-
+    digitalWrite(LED_wifi, HIGH);
+    
     time_t now = time(nullptr);
     struct tm* p_tm = localtime(&now);
 
@@ -231,7 +304,7 @@ void onReceive(int packetSize) {
     }else{
       mday = String(p_tm->tm_mday);
      }
-    if(p_tm->tm_mon < 10){
+    if(p_tm->tm_mon < 9){
       mon = String(p_tm->tm_mon + 1);
       mon = "0" + mon;
     }else{
@@ -274,8 +347,8 @@ void onReceive(int packetSize) {
  
     HTTPClient http;    //Declare object of class HTTPClient
  
-//    http.begin("http://swiss-iot.azurewebsites.net/api/readings/address");      //Specify request destination
-    http.begin("http://192.168.0.18:32333/api/readings/address");      //Specify request destination
+    http.begin("http://swiss-iot.azurewebsites.net/api/readings/address");      //Specify request destination
+//    http.begin("http://192.168.0.18:32333/api/readings/address");      //Specify request destination
    
     http.addHeader("Content-Type", "application/json");  //Specify content-type header
  
@@ -295,11 +368,17 @@ void onReceive(int packetSize) {
     
   } else {
     Serial.println("Error: WiFi connection.");
+    digitalWrite(LED_wifi, LOW);
   }
   }
 }
 
 void loop() {
+  if (WiFi.status() == WL_CONNECTED) { //Check WiFi connection status
+    digitalWrite(LED_wifi, HIGH);
+  }else{
+    digitalWrite(LED_wifi, LOW);
+   }
   // try to parse packet
   onReceive(LoRa.parsePacket());
 }
