@@ -56,7 +56,7 @@ void setup() {
     Serial.println("Couldn't find RTC");
     while (1);
   }
-  if (! rtc.initialized()) {
+   if (! rtc.initialized()) {
     Serial.println("RTC is NOT running!");
     // following line sets the RTC to the date & time this sketch was compiled
     rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
@@ -93,10 +93,50 @@ void onReceive(int packetSize) {
     Serial.println("Error: This message is not for me.");
     return;                             // skip rest of function
   }
-  
-  int uploadInterval;
 
-  uploadInterval = incoming.toInt();
+  //Split incomming message
+  String UI, setDateRTC, yearSetS, monthSetS, daySetS, hourSetS, minuteSetS, secondSetS;
+  int uploadInterval, yearSetI, monthSetI, daySetI, hourSetI, minuteSetI, secondSetI;
+  int indexSensorValue=0;
+  for(int i=0; String(char(incoming[i])) != "|"; i++){
+    indexSensorValue = i+1;
+  }
+  UI = incoming.substring(0,indexSensorValue);
+  indexSensorValue += 1;
+  setDateRTC = incoming.substring(indexSensorValue);
+  yearSetS = setDateRTC.substring(0, 4);
+  monthSetS = setDateRTC.substring(5, 7);
+  daySetS = setDateRTC.substring(8, 10);
+  hourSetS = setDateRTC.substring(11, 13);
+  minuteSetS = setDateRTC.substring(14, 16);
+  secondSetS = setDateRTC.substring(17, 18);
+  
+  yearSetI = yearSetS.toInt();
+  monthSetI = monthSetS.toInt();
+  daySetI = daySetS.toInt();
+  hourSetI = hourSetS.toInt();
+  minuteSetI = minuteSetS.toInt();
+  secondSetI = secondSetS.toInt();
+
+  rtc.adjust(DateTime(yearSetI, monthSetI, daySetI, hourSetI, minuteSetI, secondSetI));
+  
+  Serial.println("String date:");
+  Serial.println(yearSetS + " " + monthSetS + " " + daySetS + " " + hourSetS + " " + minuteSetS + " " + secondSetI);
+  
+  Serial.println("Int date:");
+  Serial.print(yearSetI);
+  Serial.print(" ");
+  Serial.print(monthSetI);
+  Serial.print(" ");
+  Serial.print(daySetI);
+  Serial.print(" ");
+  Serial.print(hourSetI);
+  Serial.print(" ");
+  Serial.print(minuteSetI);
+  Serial.print(" ");
+  Serial.print(secondSetI);
+  
+  uploadInterval = UI.toInt();
 
   //  RTC
     DateTime now = rtc.now();
@@ -108,8 +148,7 @@ void onReceive(int packetSize) {
        hourr = 0;
        dayy = 0;
     }
-
-    if(uploadInterval>=60){
+    if(uploadInterval>60){
        minutee = uploadInterval % 60;
        division = uploadInterval / 60;
        hourr = division % 24;
@@ -118,11 +157,10 @@ void onReceive(int packetSize) {
 
     DateTime future (now + TimeSpan(dayy, hourr, minutee, secondd));
 
-   String futureYearS = String(future.year());
    String futureDayS = String(future.day());
    String futureHourS = String(future.hour());
    String futureMinuteS = String(future.minute());
-   String futureDateS = futureYearS + futureDayS + futureHourS + futureMinuteS;
+   String futureDateS = futureDayS + futureHourS + futureMinuteS;
    int futureDateI = futureDateS.toInt();
 
   int nowYear = now.year();
@@ -191,6 +229,8 @@ void onReceive(int packetSize) {
   Serial.println("incomingMsgId: " + String(incomingMsgId));
   Serial.println("incomingLength: " + String(incomingLength));
   Serial.println("incoming: " + incoming);
+  Serial.println("uploadInterval: " + UI);
+  Serial.println("setDateRTC: " + setDateRTC);
   Serial.println("RSSI: " + String(LoRa.packetRssi()));
   Serial.println("Snr: " + String(LoRa.packetSnr()));
   Serial.println();
@@ -202,16 +242,15 @@ void onReceive(int packetSize) {
 
    sleeping:
    DateTime noww = rtc.now();
-   String nowYearS = String(noww.year());
    String nowDayS = String(noww.day());
    String nowHourS = String(noww.hour());
    String nowMinuteS = String(noww.minute());
-   String nowDateS = nowYearS + nowDayS + nowHourS + nowMinuteS;
+   String nowDateS = nowDayS + nowHourS + nowMinuteS;
    int nowDateI = nowDateS.toInt();
    
-  if(nowDateS!=futureDateS){
+  if(nowDateI!=futureDateI){
       LoRa.sleep();
-      Sleepy::loseSomeTime(50000);
+      Sleepy::loseSomeTime(60000);
       goto sleeping;
   };
   

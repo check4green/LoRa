@@ -20,7 +20,7 @@ int interval = 2000;          // interval between sends
 int timezone = 3 * 3600;
 int dst = 0;
 
-String year, mon, mday, hour, minn, sec, tme;
+String year, mon, mday, hour, minn, sec, tme, tmeRTC;
 
 byte msgCount = 0;            // count of outgoing messages
 
@@ -65,8 +65,9 @@ void setup() {
   ssidpass="0";
   ssid = "0";
   pass = "0";
-
-  ssidpass = EEPROM.get(address, arrayToStore);
+  
+  if(EEPROM.read(address) != 57){
+    ssidpass = EEPROM.get(address, arrayToStore); 
   Serial.println();
   Serial.println(ssidpass);
   int indexssidpass=0;
@@ -86,6 +87,7 @@ void setup() {
   WiFi.begin((const char*)ssid.c_str(), (const char*)pass.c_str());
   Serial.println();
   Serial.print("Waiting 10sec for WiFi connecting...");
+  }
    delay(10000);
   if(WiFi.status() != WL_CONNECTED){
       digitalWrite(LED_wifi, LOW);
@@ -135,7 +137,7 @@ void setup() {
 }
 
   // send packet
-  int sendMessage(String sA, byte iCA) {
+  int sendMessage(String sA, byte iCA, String tmeRTC) {
     String upInt, gA, cA, lA, iCAc;
     
     lA = String(localAddress, HEX);
@@ -153,7 +155,7 @@ void setup() {
     int httpCodeGET = http.GET();     //Send the request
     if (httpCodeGET > 0) { //Check the returning code
       
-      StaticJsonBuffer<400> jsonBuffer;
+      StaticJsonBuffer<500> jsonBuffer;
       JsonObject& root = jsonBuffer.parseObject(http.getString());
       if (!root.success()) {
         Serial.println("Error: Parse object failed.");
@@ -192,7 +194,7 @@ void setup() {
       return 200;  
     }
     
-    String outgoing = upInt;              // outgoing message
+    String outgoing = upInt + tmeRTC;              // outgoing message
     
     destinationAddress = iCA;
     
@@ -262,38 +264,7 @@ void onReceive(int packetSize) {
   indexSensorValue += 1;
   sensorAddress = incoming.substring(indexSensorValue);
 
-
-  // if message is for this device, or broadcast, print details:
-  //Serial.println("destinationAddress: 0x" + String(destinationAddress, HEX));
-  Serial.println();
-  Serial.println("LoRa GATEWAY RECEIVED");
-  Serial.println("localAddress: 0x" + String(localAddress, HEX));
-  Serial.println("Received from: 0x" + String(sender, HEX));
-  Serial.println("Sent to: 0x" + String(recipient, HEX));
-  Serial.println("incomingMsgId: " + String(incomingMsgId));
-  Serial.println("incoming.length: " + String(incomingLength));
-  Serial.println("incoming: " + incoming);
-  Serial.println("sensorValue: " + sensorValue);
-  Serial.println("sensorAddress: " + sensorAddress);
-  Serial.println("RSSI: " + String(LoRa.packetRssi()));
-  Serial.println("Snr: " + String(LoRa.packetSnr()));
-  Serial.println();
-
-  int gatewayAddressVerify;
-  
-  if (millis() - lastSendTime > interval) {
-    gatewayAddressVerify = sendMessage(sensorAddress, sender);
-    lastSendTime = millis();            // timestamp the message
-    interval = random(2000) + 1000;    // 2-3 seconds
-  }
-    digitalWrite(LED_lora, LOW);
-    
-  //WIFI
-  if(gatewayAddressVerify == 300){   
-  if (WiFi.status() == WL_CONNECTED) { //Check WiFi connection status
-    digitalWrite(LED_wifi, HIGH);
-    
-    time_t now = time(nullptr);
+  time_t now = time(nullptr);
     struct tm* p_tm = localtime(&now);
 
     year = String(p_tm->tm_year + 1900);
@@ -330,6 +301,37 @@ void onReceive(int packetSize) {
      }
     
     tme = year + "-" + mon + "-" + mday + "T" + hour + ":" + minn + ":" + sec + "+02:00";
+    tmeRTC = "|" + year + "/" + mon + "/" + mday + "/" + hour + "/" + minn + "/" + sec;
+
+  // if message is for this device, or broadcast, print details:
+  //Serial.println("destinationAddress: 0x" + String(destinationAddress, HEX));
+  Serial.println();
+  Serial.println("LoRa GATEWAY RECEIVED");
+  Serial.println("localAddress: 0x" + String(localAddress, HEX));
+  Serial.println("Received from: 0x" + String(sender, HEX));
+  Serial.println("Sent to: 0x" + String(recipient, HEX));
+  Serial.println("incomingMsgId: " + String(incomingMsgId));
+  Serial.println("incoming.length: " + String(incomingLength));
+  Serial.println("incoming: " + incoming);
+  Serial.println("sensorValue: " + sensorValue);
+  Serial.println("sensorAddress: " + sensorAddress);
+  Serial.println("RSSI: " + String(LoRa.packetRssi()));
+  Serial.println("Snr: " + String(LoRa.packetSnr()));
+  Serial.println();
+
+  int gatewayAddressVerify;
+  
+  if (millis() - lastSendTime > interval) {
+    gatewayAddressVerify = sendMessage(sensorAddress, sender, tmeRTC);
+    lastSendTime = millis();            // timestamp the message
+    interval = random(2000) + 1000;    // 2-3 seconds
+  }
+    digitalWrite(LED_lora, LOW);
+    
+  //WIFI
+  if(gatewayAddressVerify == 300){   
+  if (WiFi.status() == WL_CONNECTED) { //Check WiFi connection status
+    digitalWrite(LED_wifi, HIGH);
  
     StaticJsonBuffer<300> JSONbuffer;   //Declaring static JSON buffer
     JsonObject& JSONencoder = JSONbuffer.createObject(); 
