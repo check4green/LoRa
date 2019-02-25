@@ -251,6 +251,7 @@ void onReceive(int packetSize) {
   // if the recipient isn't this device or broadcast,
   if (recipient != localAddress && recipient != 0x00) {
     Serial.println("Error: This message is not for me.");
+    digitalWrite(LED_lora, LOW); 
     return;                             // skip rest of function
   }
   

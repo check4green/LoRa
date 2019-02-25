@@ -1,13 +1,23 @@
 #include <SPI.h>
 #include <LoRa.h>
 #include <JeeLib.h> // Low power functions library
-#include <dht11.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
 #include <Wire.h>
 #include "RTClib.h"
 
-dht11 DHT11;
-#define DHT11PIN 7
+// Data wire is plugged into port 2 on the Arduino
+#define ONE_WIRE_BUS 7
 
+// Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
+OneWire oneWire(ONE_WIRE_BUS);
+
+// Pass our oneWire reference to Dallas Temperature. 
+DallasTemperature sensors(&oneWire);
+
+/*
+ * The setup function. We only start the sensors here
+ */
 
 const int csPin = 10;          // LoRa radio chip select
 const int resetPin = 9;       // LoRa radio reset
@@ -56,7 +66,7 @@ void setup() {
     Serial.println("Couldn't find RTC");
     while (1);
   }
-   if (! rtc.initialized()) {
+  if (! rtc.initialized()) {
     Serial.println("RTC is NOT running!");
     // following line sets the RTC to the date & time this sketch was compiled
     rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
@@ -64,6 +74,7 @@ void setup() {
     // January 21, 2014 at 3am you would call:
     // rtc.adjust(DateTime(2014, 1, 21, 3, 0, 0));
   }
+  sensors.begin();
 }
 
 void onReceive(int packetSize) {
@@ -93,50 +104,10 @@ void onReceive(int packetSize) {
     Serial.println("Error: This message is not for me.");
     return;                             // skip rest of function
   }
+  
+  int uploadInterval;
 
-  //Split incomming message
-  String UI, setDateRTC, yearSetS, monthSetS, daySetS, hourSetS, minuteSetS, secondSetS;
-  int uploadInterval, yearSetI, monthSetI, daySetI, hourSetI, minuteSetI, secondSetI;
-  int indexSensorValue=0;
-  for(int i=0; String(char(incoming[i])) != "|"; i++){
-    indexSensorValue = i+1;
-  }
-  UI = incoming.substring(0,indexSensorValue);
-  indexSensorValue += 1;
-  setDateRTC = incoming.substring(indexSensorValue);
-  yearSetS = setDateRTC.substring(0, 4);
-  monthSetS = setDateRTC.substring(5, 7);
-  daySetS = setDateRTC.substring(8, 10);
-  hourSetS = setDateRTC.substring(11, 13);
-  minuteSetS = setDateRTC.substring(14, 16);
-  secondSetS = setDateRTC.substring(17, 18);
-  
-  yearSetI = yearSetS.toInt();
-  monthSetI = monthSetS.toInt();
-  daySetI = daySetS.toInt();
-  hourSetI = hourSetS.toInt();
-  minuteSetI = minuteSetS.toInt();
-  secondSetI = secondSetS.toInt();
-
-  rtc.adjust(DateTime(yearSetI, monthSetI, daySetI, hourSetI, minuteSetI, secondSetI));
-  
-  Serial.println("String date:");
-  Serial.println(yearSetS + " " + monthSetS + " " + daySetS + " " + hourSetS + " " + minuteSetS + " " + secondSetI);
-  
-  Serial.println("Int date:");
-  Serial.print(yearSetI);
-  Serial.print(" ");
-  Serial.print(monthSetI);
-  Serial.print(" ");
-  Serial.print(daySetI);
-  Serial.print(" ");
-  Serial.print(hourSetI);
-  Serial.print(" ");
-  Serial.print(minuteSetI);
-  Serial.print(" ");
-  Serial.print(secondSetI);
-  
-  uploadInterval = UI.toInt();
+  uploadInterval = incoming.toInt();
 
   //  RTC
     DateTime now = rtc.now();
@@ -148,7 +119,8 @@ void onReceive(int packetSize) {
        hourr = 0;
        dayy = 0;
     }
-    if(uploadInterval>60){
+
+    if(uploadInterval>=60){
        minutee = uploadInterval % 60;
        division = uploadInterval / 60;
        hourr = division % 24;
@@ -157,10 +129,11 @@ void onReceive(int packetSize) {
 
     DateTime future (now + TimeSpan(dayy, hourr, minutee, secondd));
 
+   String futureYearS = String(future.year());
    String futureDayS = String(future.day());
    String futureHourS = String(future.hour());
    String futureMinuteS = String(future.minute());
-   String futureDateS = futureDayS + futureHourS + futureMinuteS;
+   String futureDateS = futureYearS + futureDayS + futureHourS + futureMinuteS;
    int futureDateI = futureDateS.toInt();
 
   int nowYear = now.year();
@@ -229,8 +202,6 @@ void onReceive(int packetSize) {
   Serial.println("incomingMsgId: " + String(incomingMsgId));
   Serial.println("incomingLength: " + String(incomingLength));
   Serial.println("incoming: " + incoming);
-  Serial.println("uploadInterval: " + UI);
-  Serial.println("setDateRTC: " + setDateRTC);
   Serial.println("RSSI: " + String(LoRa.packetRssi()));
   Serial.println("Snr: " + String(LoRa.packetSnr()));
   Serial.println();
@@ -242,15 +213,16 @@ void onReceive(int packetSize) {
 
    sleeping:
    DateTime noww = rtc.now();
+   String nowYearS = String(noww.year());
    String nowDayS = String(noww.day());
    String nowHourS = String(noww.hour());
    String nowMinuteS = String(noww.minute());
-   String nowDateS = nowDayS + nowHourS + nowMinuteS;
+   String nowDateS = nowYearS + nowDayS + nowHourS + nowMinuteS;
    int nowDateI = nowDateS.toInt();
    
-  if(nowDateI!=futureDateI){
+  if(nowDateS!=futureDateS){
       LoRa.sleep();
-      Sleepy::loseSomeTime(60000);
+      Sleepy::loseSomeTime(50000);
       goto sleeping;
   };
   
@@ -290,8 +262,8 @@ void loop() {
   clientAddressForServer = String(localAddress, HEX);
   clientAddressForServer = "0x" + clientAddressForServer;
   if (millis() - lastSendTime > interval) {
-    int chk = DHT11.read(DHT11PIN);
-    int temperature = DHT11.temperature;
+    sensors.requestTemperatures(); // Send the command to get temperatures
+    int temperature = sensors.getTempCByIndex(0);
     String sensorValue = String(temperature);   // send a message
     sendMessage(sensorValue, clientAddressForServer);
     lastSendTime = millis();            // timestamp the message
