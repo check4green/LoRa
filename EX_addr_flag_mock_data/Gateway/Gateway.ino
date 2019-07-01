@@ -368,18 +368,18 @@ void onReceive(int packetSize, String outgoingNetworkAddress) {
   // if message is for this device, or broadcast, print details:
   Serial.println();
   Serial.println("LoRa GATEWAY RECEIVED");
-//  Serial.println("localAddress: 0x" + String(localAddress, HEX));
-//  Serial.println("Received from: 0x" + String(sender, HEX));
-//  Serial.println("Sent to: 0x" + String(recipient, HEX));
-//  Serial.println("incomingMsgId: " + String(incomingMsgId));
-//  Serial.println("incoming.length: " + String(incomingLength));
-//  Serial.println("incoming: " + incoming);
-//  Serial.println("incomingSensorAddress: " + incomingSensorAddress);
-//  Serial.println("incomingNetworkAddress: " + incomingNetworkAddress);
-//  Serial.println("incomingGatewayAddress: " + incomingGatewayAddress);
-//  Serial.println("sensorValue: " + sensorValue);
-//  Serial.println("RSSI: " + String(LoRa.packetRssi()));
-//  Serial.println("Snr: " + String(LoRa.packetSnr()));
+  Serial.println("localAddress: 0x" + String(localAddress, HEX));
+  Serial.println("Received from: 0x" + String(sender, HEX));
+  Serial.println("Sent to: 0x" + String(recipient, HEX));
+  Serial.println("incomingMsgId: " + String(incomingMsgId));
+  Serial.println("incoming.length: " + String(incomingLength));
+  Serial.println("incoming: " + incoming);
+  Serial.println("incomingSensorAddress: " + incomingSensorAddress);
+  Serial.println("incomingNetworkAddress: " + incomingNetworkAddress);
+  Serial.println("incomingGatewayAddress: " + incomingGatewayAddress);
+  Serial.println("sensorValue: " + sensorValue);
+  Serial.println("RSSI: " + String(LoRa.packetRssi()));
+  Serial.println("Snr: " + String(LoRa.packetSnr()));
   Serial.println();
   
     int gatewayAddressVerify;

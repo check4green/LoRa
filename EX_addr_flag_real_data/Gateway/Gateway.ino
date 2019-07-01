@@ -10,7 +10,7 @@ const int csPin = 15;          // LoRa radio chip select
 const int resetPin = 4;       // LoRa radio reset
 const int irqPin = 5;         // change for your board; must be a hardware interrupt pin
 
-String outgoingGatewayAddress = "a2b3c5d5e6";
+String outgoingGatewayAddress = "fslsoso888";
 //String outgoingSensorAddress = "01234abcde";
 String outgoingNetworkAddressFlag = "";
   
@@ -147,7 +147,7 @@ void loop() {
   if (millis() - lastSendTimeFlag > interval) {
     if(nextSwitchTime<millis()){
       outgoingNetworkAddressFlag = sendFlag();
-      nextSwitchTime = millis()+60000;
+      nextSwitchTime = millis()+300000;
     }
       lastSendTimeFlag = millis();            // timestamp the message
       interval = random(2000) + 1000;    // 2-3 seconds
@@ -167,16 +167,16 @@ void loop() {
   if (WiFi.status() == WL_CONNECTED) { //Check WiFi connection status
     digitalWrite(LED_wifi, HIGH);
     HTTPClient http;    //Declare object of class HTTPClient
-//    http.begin("http://swiss-iot.azurewebsites.net/api/gateways/" + outgoingGatewayAddress);  //Specify request destination
-    http.begin("http://192.168.0.18:32332/api/gateways/" + outgoingGatewayAddress);  //Specify request destination
-    http.addHeader("Authorization", "Basic Y3JnQHlhaG9vLmNvbTpwYWNhbGE=", true, true);
+    http.begin("http://swiss-iot.azurewebsites.net/api/gateway/" + outgoingGatewayAddress);  //Specify request destination
+//    http.begin("http://192.168.0.18:32332/api/gateways/" + outgoingGatewayAddress);  //Specify request destination
+//    http.addHeader("Authorization", "Basic Y3JnQHlhaG9vLmNvbTpwYWNhbGE=", true, true);
     int httpCodeGET = http.GET();     //Send the request
     if (httpCodeGET > 0) { //Check the returning code
       
       StaticJsonBuffer<500> jsonBuffer;
       JsonObject& root = jsonBuffer.parseObject(http.getString());
       if (!root.success()) {
-        Serial.println("Error: Parse object failed.");
+        Serial.println("Error: Parse flag object failed.");
         return "";
       }
       JsonArray& sensors = root["sensors"];
@@ -250,9 +250,9 @@ String upInt, gA, cA;
   if (WiFi.status() == WL_CONNECTED) { //Check WiFi connection status
     digitalWrite(LED_wifi, HIGH);
     HTTPClient http;    //Declare object of class HTTPClient
-//    http.begin("http://swiss-iot.azurewebsites.net/api/sensors/" + outgoingSensorAddress);  //Specify request destination
-    http.begin("http://192.168.0.18:32332/api/sensors/" + outgoingSensorAddress);  //Specify request destination
-    http.addHeader("Authorization", "Basic Y3JnQHlhaG9vLmNvbTpwYWNhbGE=", true, true);
+    http.begin("http://swiss-iot.azurewebsites.net/api/sensors/" + outgoingSensorAddress);  //Specify request destination
+//    http.begin("http://192.168.0.18:32332/api/sensors/" + outgoingSensorAddress);  //Specify request destination
+//    http.addHeader("Authorization", "Basic Y3JnQHlhaG9vLmNvbTpwYWNhbGE=", true, true);
     int httpCodeGET = http.GET();     //Send the request
     if (httpCodeGET > 0) { //Check the returning code
       
@@ -448,8 +448,8 @@ void onReceive(int packetSize, String outgoingNetworkAddress) {
  
     HTTPClient http;    //Declare object of class HTTPClient
  
-//    http.begin("http://swiss-iot.azurewebsites.net/api/readings");      //Specify request destination
-    http.begin("http://192.168.0.18:32332/api/readings");      //Specify request destination
+    http.begin("http://swiss-iot.azurewebsites.net/api/readings/address");      //Specify request destination
+//    http.begin("http://192.168.0.18:32332/api/readings");      //Specify request destination
    
     http.addHeader("Content-Type", "application/json");  //Specify content-type header
  

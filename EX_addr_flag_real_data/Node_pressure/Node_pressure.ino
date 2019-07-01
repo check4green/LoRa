@@ -1,25 +1,20 @@
 #include <SPI.h>
 #include <LoRa.h>
-#include <JeeLib.h> // Low power functions library
-#include <OneWire.h>
-#include <DallasTemperature.h>
-#include <Wire.h>
-#include "RTClib.h"
 
-// Data wire is plugged into port 2 on the Arduino
-#define ONE_WIRE_BUS 7
+const int analogInPin = A0;
 
-// Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
-OneWire oneWire(ONE_WIRE_BUS);
-
-// Pass our oneWire reference to Dallas Temperature. 
-DallasTemperature sensors(&oneWire);
+int transducerValue = 0;
+int psiValue = 0;
+float barValue = 0;
+float voltageValue = 0;
+int vpsiValue = 0;
+float vbarValue = 0;
 
 const int csPin = 10;          // LoRa radio chip select
 const int resetPin = 9;       // LoRa radio reset
 const int irqPin = 8;         // change for your board; must be a hardware interrupt pin
 
-String outgoingSensorAddress = "rece1tare2";
+String outgoingSensorAddress = "f8afu8asuf";
 //String outgoingGatewayAddress = "56789fghij";
 String flagNetworkAddress = "0000000000";
 
@@ -28,17 +23,6 @@ byte localAddress = 0xFF;     // address of this device
 byte destinationAddress = 0xBB;      // destination to send to
 long lastSendTime = 0;        // last send time
 int interval = 2000;          // interval between sends
-
-ISR(WDT_vect) { Sleepy::watchdogEvent(); } // Setup the watchdog
-
-const int transistor = 4;
-
-#if defined(ARDUINO_ARCH_SAMD)
-// for Zero, output on USB Serial console, remove line below if using programming port to program the Zero!
-   #define Serial SerialUSB
-#endif
-
-RTC_PCF8523 rtc;
 
 void setup() {
   Serial.begin(9600);                   // initialize serial
@@ -53,24 +37,9 @@ void setup() {
     Serial.println("Error: LoRa init failed. Check your connections.");
     while (true);                       // if failed, do nothing
   }
-
-  pinMode(transistor, OUTPUT);
   
   Serial.println("LoRa init succeeded.");
 
-   if (! rtc.begin()) {
-    Serial.println("Couldn't find RTC");
-    while (1);
-  }
-  if (! rtc.initialized()) {
-    Serial.println("RTC is NOT running!");
-    // following line sets the RTC to the date & time this sketch was compiled
-    rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
-    // This line sets the RTC with an explicit date & time, for example to set
-    // January 21, 2014 at 3am you would call:
-    // rtc.adjust(DateTime(2014, 1, 21, 3, 0, 0));
-  }
-  sensors.begin();
   Serial.println("Waiting for gateway connection...");
 }
 
@@ -78,11 +47,15 @@ void loop() {
   while(flagNetworkAddress == "0000000000"){
     flagNetworkAddress = receiveFlag(LoRa.parsePacket());
   }
-  digitalWrite(transistor, HIGH);
   if (millis() - lastSendTime > interval) {
-    sensors.requestTemperatures(); // Send the command to get temperatures
-    int temperature = sensors.getTempCByIndex(0);
-    String senVal = String(temperature);   // send a message
+    transducerValue = analogRead(analogInPin);
+    psiValue = map(transducerValue, 200, 1023, 0, 1450);
+    barValue = psiValue * 0.0689475729;
+    if(psiValue < 0 || barValue < 0){
+      psiValue = 0;
+      barValue = 0;
+    }
+    String senVal = String(barValue);   // send a message
     sendMessage(flagNetworkAddress, senVal);
     lastSendTime = millis();            // timestamp the message
     interval = random(2000) + 1000;    // 2-3 seconds
@@ -234,88 +207,6 @@ void onReceive(int packetSize) {
   }
 
   int upInt = uploadInterval.toInt();
-  
-  //  RTC
-    DateTime now = rtc.now();
-    int division, dayy, hourr, minutee, secondd;
-    secondd = 0;
-
-    if(upInt<60){
-       minutee = upInt;
-       hourr = 0;
-       dayy = 0;
-    }
-
-    if(upInt>=60){
-       minutee = upInt % 60;
-       division = upInt / 60;
-       hourr = division % 24;
-       dayy = division / 24;
-    }
-
-    DateTime future (now + TimeSpan(dayy, hourr, minutee, secondd));
-
-   String futureYearS = String(future.year());
-   String futureDayS = String(future.day());
-   String futureHourS = String(future.hour());
-   String futureMinuteS = String(future.minute());
-   String futureDateS = futureYearS + futureDayS + futureHourS + futureMinuteS;
-   int futureDateI = futureDateS.toInt();
-
-  int nowYear = now.year();
-  int nowMonth = now.month();
-  int nowDay = now.day();
-  int nowHour = now.hour();
-  int nowMinute = now.minute();
-  int nowSecond = now.second();
-
-  int futureYear = future.year();
-  int futureMonth = future.month();
-  int futureDay = future.day();
-  int futureHour = future.hour();
-  int futureMinute = future.minute();
-  int futureSecond = future.second();
-
-//    Serial.println();
-//    Serial.println("UploadInterval time: ");
-//    Serial.print(dayy);
-//    Serial.print('/');
-//    Serial.print(hourr);
-//    Serial.print('/');
-//    Serial.print(minutee);
-//    Serial.print('/');
-//    Serial.print(secondd);
-//    Serial.println();
-//    
-//    Serial.println();
-//    Serial.println("Current time: ");
-//    Serial.print(nowYear);
-//    Serial.print('/');
-//    Serial.print(nowMonth);
-//    Serial.print('/');
-//    Serial.print(nowDay);
-//    Serial.print(' ');
-//    Serial.print(nowHour);
-//    Serial.print(':');
-//    Serial.print(nowMinute);
-//    Serial.print(':');
-//    Serial.print(nowSecond);
-//    Serial.println();
-//
-//    Serial.println();
-//    Serial.println("Upload time: ");
-//    Serial.print(futureYear);
-//    Serial.print('/');
-//    Serial.print(futureMonth);
-//    Serial.print('/');
-//    Serial.print(futureDay);
-//    Serial.print(' ');
-//    Serial.print(futureHour);
-//    Serial.print(':');
-//    Serial.print(futureMinute);
-//    Serial.print(':');
-//    Serial.print(futureSecond);
-//    Serial.println();
 
   Serial.println();
   Serial.println("LoRa CLIENT RECEIVED");
@@ -333,24 +224,6 @@ void onReceive(int packetSize) {
 //  Serial.println("Snr: " + String(LoRa.packetSnr()));
   Serial.println();
 
-  Serial.println("Sleeping: " + uploadInterval + " minutes...");
-  delay(100);
-//  sleeping:
-   DateTime noww = rtc.now();
-   String nowYearS = String(noww.year());
-   String nowDayS = String(noww.day());
-   String nowHourS = String(noww.hour());
-   String nowMinuteS = String(noww.minute());
-   String nowDateS = nowYearS + nowDayS + nowHourS + nowMinuteS;
-   int nowDateI = nowDateS.toInt();
-   
-//  if(nowDateS!=futureDateS){
-      LoRa.sleep();
-      Sleepy::loseSomeTime(50000);
-//      goto sleeping;
-//  };
-  
-  digitalWrite(transistor, HIGH);
-  delay(1000);
+  delay(5000);
 }
 
